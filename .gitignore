@@ -1,0 +1,33 @@
+#ignore all files and folders
+*
+!*/
+
+#ignore this folder
+target/
+
+#except the following file types
+!.gitignore
+!.clang-format
+!*.cpp
+!*.hpp
+!*.c
+!*.h
+!*.inl
+
+!*.go
+
+!*.md
+!*.pdf
+
+!*.cs
+!*.csproj
+!*.resx
+
+!*.hlsl
+!*.fragment
+
+!*.ini
+!*.bat
+
+#do ignore 'secret' files
+*.secret.*
