@@ -1,23 +1,23 @@
-package rdno_airquality
+package rairquality
 
 import (
 	denv "github.com/jurgen-kluft/ccode/denv"
-	rdno_lcd "github.com/jurgen-kluft/rdno_lcd/package"
-	rdno_lvgl "github.com/jurgen-kluft/rdno_lvgl/package"
-	rdno_sensors "github.com/jurgen-kluft/rdno_sensors/package"
-	rdno_wifi "github.com/jurgen-kluft/rdno_wifi/package"
+	rlcd "github.com/jurgen-kluft/rlcd/package"
+	rlvgl "github.com/jurgen-kluft/rlvgl/package"
+	rsensors "github.com/jurgen-kluft/rsensors/package"
+	rwifi "github.com/jurgen-kluft/rwifi/package"
 )
 
 const (
 	repo_path = "github.com\\jurgen-kluft"
-	repo_name = "rdno_airquality"
+	repo_name = "rairquality"
 )
 
 func GetPackage() *denv.Package {
-	wifipkg := rdno_wifi.GetPackage()
-	sensorspkg := rdno_sensors.GetPackage()
-	lcdpkg := rdno_lcd.GetPackage()
-	lvglpkg := rdno_lvgl.GetPackage()
+	wifipkg := rwifi.GetPackage()
+	sensorspkg := rsensors.GetPackage()
+	lcdpkg := rlcd.GetPackage()
+	lvglpkg := rlvgl.GetPackage()
 
 	mainpkg := denv.NewPackage(repo_path, repo_name)
 	mainpkg.AddPackage(wifipkg)

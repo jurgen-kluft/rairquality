@@ -1,22 +1,22 @@
-#include "rdno_airquality/c_airquality.h"
+#include "rairquality/c_airquality.h"
 
-#include "rdno_core/c_malloc.h"
-#include "rdno_core/c_gpio.h"
-#include "rdno_core/c_timer.h"
-#include "rdno_core/c_serial.h"
-#include "rdno_core/c_packet.h"
-#include "rdno_core/c_str.h"
-#include "rdno_core/c_system.h"
-#include "rdno_core/c_task.h"
-#include "rdno_core/c_wire.h"
+#include "rcore/c_malloc.h"
+#include "rcore/c_gpio.h"
+#include "rcore/c_timer.h"
+#include "rcore/c_log.h"
+#include "rcore/c_packet.h"
+#include "rcore/c_str.h"
+#include "rcore/c_system.h"
+#include "rcore/c_task.h"
+#include "rcore/c_wire.h"
 
-#include "rdno_wifi/c_tcp.h"
-#include "rdno_wifi/c_node.h"
+#include "rwifi/c_tcp.h"
+#include "rwifi/c_node.h"
 
-#include "rdno_sensors/c_bh1750.h"
-#include "rdno_sensors/c_bme280.h"
-#include "rdno_sensors/c_scd4x.h"
-#include "rdno_sensors/c_rd03d.h"
+#include "rsensors/c_bh1750.h"
+#include "rsensors/c_bme280.h"
+#include "rsensors/c_scd4x.h"
+#include "rsensors/c_rd03d.h"
 
 #define ENABLE_BH1750
 #define ENABLE_BME280
@@ -79,7 +79,7 @@ namespace ncore
 
     struct state_app_t
     {
-        npacket::packet_t gSensorPacket;  // Sensor packet for sending data
+        npacket::sensorpacket_t gSensorPacket;  // Sensor packet for sending data
 
         bme280_data_t gCurrentBme;
         bme280_data_t gLastSendBme;
@@ -122,10 +122,11 @@ namespace ncore
 
             // Write a custom (binary-format) network message
             gAppState.gSensorPacket.begin(state->wifi->m_mac);
-            nserial::printf("Light: %d lx\n", va_t((u32)lux));
-            gAppState.gSensorPacket.write_sensor(npacket::nsensorid::ID_LIGHT, lux);
-            if (gAppState.gSensorPacket.finalize() > 0)
+            nlog::printf("Light: %d lx\n", va_t((u32)lux));
+            gAppState.gSensorPacket.write(npacket::nsensorid::ID_LIGHT, lux);
+            if (gAppState.gSensorPacket.count() > 0)
             {
+                gAppState.gSensorPacket.finalize();
                 nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
             }
         }
@@ -163,24 +164,25 @@ namespace ncore
         if (gAppState.gLastSendBme.temperature != temperature)
         {
             gAppState.gLastSendBme.temperature = temperature;
-            nserial::printf("Temperature: %d °C\n", va_t((s32)temperature));
-            gAppState.gSensorPacket.write_sensor(npacket::nsensorid::ID_TEMPERATURE, (u16)temperature);
+            nlog::printf("Temperature: %d °C\n", va_t((s32)temperature));
+            gAppState.gSensorPacket.write(npacket::nsensorid::ID_TEMPERATURE, (u16)temperature);
         }
         if (gAppState.gLastSendBme.pressure != pressure)
         {
             gAppState.gLastSendBme.pressure = pressure;
-            nserial::printf("Pressure: %d hPa\n", va_t((u32)pressure));
-            gAppState.gSensorPacket.write_sensor(npacket::nsensorid::ID_PRESSURE, (u16)pressure);
+            nlog::printf("Pressure: %d hPa\n", va_t((u32)pressure));
+            gAppState.gSensorPacket.write(npacket::nsensorid::ID_PRESSURE, (u16)pressure);
         }
         if (gAppState.gLastSendBme.humidity != humidity)
         {
             gAppState.gLastSendBme.humidity = humidity;
-            nserial::printf("Humidity: %d %%\n", va_t((u32)humidity));
-            gAppState.gSensorPacket.write_sensor(npacket::nsensorid::ID_HUMIDITY, (u16)humidity);
+            nlog::printf("Humidity: %d %%\n", va_t((u32)humidity));
+            gAppState.gSensorPacket.write(npacket::nsensorid::ID_HUMIDITY, (u16)humidity);
         }
 
-        if (gAppState.gSensorPacket.finalize() > 0)
+        if (gAppState.gSensorPacket.count() > 0)
         {
+            gAppState.gSensorPacket.finalize();
             nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
 #endif
@@ -220,24 +222,25 @@ namespace ncore
         if (gAppState.gLastSendScd.co2 != co2)
         {
             gAppState.gLastSendScd.co2 = co2;
-            nserial::printf("SCD CO2: %d ppm\n", va_t((u32)co2));
-            gAppState.gSensorPacket.write_sensor(npacket::nsensorid::ID_CO2, (u16)co2);
+            nlog::printf("SCD CO2: %d ppm\n", va_t((u32)co2));
+            gAppState.gSensorPacket.write(npacket::nsensorid::ID_CO2, (u16)co2);
         }
         if (gAppState.gLastSendScd.temperature != temperature)
         {
             gAppState.gLastSendScd.temperature = temperature;
-            nserial::printf("SCD Temperature: %d °C\n", va_t((s32)temperature));
-            gAppState.gSensorPacket.write_sensor(npacket::nsensorid::ID_TEMPERATURE, (u16)temperature);
+            nlog::printf("SCD Temperature: %d °C\n", va_t((s32)temperature));
+            gAppState.gSensorPacket.write(npacket::nsensorid::ID_TEMPERATURE, (u16)temperature);
         }
         if (gAppState.gLastSendScd.humidity != humidity)
         {
             gAppState.gLastSendScd.humidity = humidity;
-            nserial::printf("SCD Humidity: %d %%\n", va_t((u32)humidity));
-            gAppState.gSensorPacket.write_sensor(npacket::nsensorid::ID_HUMIDITY, (u16)humidity);
+            nlog::printf("SCD Humidity: %d %%\n", va_t((u32)humidity));
+            gAppState.gSensorPacket.write(npacket::nsensorid::ID_HUMIDITY, (u16)humidity);
         }
 
-        if (gAppState.gSensorPacket.finalize() > 0)
+        if (gAppState.gSensorPacket.count() > 0)
         {
+            gAppState.gSensorPacket.finalize();
             nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
 #endif
@@ -256,7 +259,7 @@ namespace ncore
                 if (nsensors::nrd03d::getTarget(i, tgt))
                 {
                     gAppState.gCurrentRd03d.DetectionBits[i] = (gAppState.gCurrentRd03d.DetectionBits[i] << 1) | 1;
-                    // nserial::printf("T%d: %d, %d\n", va_t(i), va_t(tgt[i].x), va_t(tgt[i].y));
+                    // nlog::printf("T%d: %d, %d\n", va_t(i), va_t(tgt[i].x), va_t(tgt[i].y));
                 }
                 else
                 {
@@ -282,7 +285,7 @@ namespace ncore
                 }
                 gAppState.gCurrentRd03d.Detected[i] = detected;
 
-                nserial::printf("T%d detection: %s\n", va_t(i), va_t((detected != 0) ? "PRESENCE" : "ABSENCE"));
+                nlog::printf("T%d detection: %s\n", va_t(i), va_t((detected != 0) ? "PRESENCE" : "ABSENCE"));
             }
         }
 #endif
@@ -301,12 +304,13 @@ namespace ncore
             if (gAppState.gCurrentRd03d.LastSendDetected[i] != detected)
             {
                 gAppState.gCurrentRd03d.LastSendDetected[i] = detected;
-                gAppState.gSensorPacket.write_sensor(npacket::nsensorid::ID_PRESENCE1 + i, detected);
+                gAppState.gSensorPacket.write(npacket::nsensorid::ID_PRESENCE1 + i, detected);
             }
         }
 
-        if (gAppState.gSensorPacket.finalize() > 0)
+        if (gAppState.gSensorPacket.count() > 0)
         {
+            gAppState.gSensorPacket.finalize();
             nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
 #endif
@@ -403,38 +407,44 @@ namespace ncore
 #define SDA_PIN 21
 #define SCL_PIN 22
 
-        void presetup()
+        void presetup(state_t* state)
         {
             // Initialize I2C bus
-            nwire::begin(SDA_PIN, SCL_PIN);
+            //            nwire::begin(SDA_PIN, SCL_PIN);
         }
 
         void setup(state_t* state)
         {
-#ifdef ENABLE_BH1750
-            gAppState.gCurrentBh.reset();
-            gAppState.gLastSendBh.reset();
-            nsensors::initBH1750();  // Initialize the BH1750 sensor
-#endif
-#ifdef ENABLE_BME280
-            gAppState.gCurrentBme.reset();
-            gAppState.gLastSendBme.reset();
-            nsensors::initBME280();  // Initialize the BME280 sensor
-#endif
-#ifdef ENABLE_SCD41
-            gAppState.gCurrentScd.reset();
-            gAppState.gLastSendScd.reset();
-            nsensors::initSCD41();  // Initialize the SCD4X sensor
-#endif
-#ifdef ENABLE_RD03D
-            gAppState.gCurrentRd03d.reset();
-            nsensors::nrd03d::begin(16, 17);  // Initialize RD03D sensor UART rx and tx pin
-#endif
-            ntask::set_main(state, &gAppTask, &gMainProgram);
-            nnode::initialize(state, &gAppTask);
+            // #ifdef ENABLE_BH1750
+            //             gAppState.gCurrentBh.reset();
+            //             gAppState.gLastSendBh.reset();
+            //             nsensors::initBH1750();  // Initialize the BH1750 sensor
+            // #endif
+            // #ifdef ENABLE_BME280
+            //             gAppState.gCurrentBme.reset();
+            //             gAppState.gLastSendBme.reset();
+            //             nsensors::initBME280();  // Initialize the BME280 sensor
+            // #endif
+            // #ifdef ENABLE_SCD41
+            //             gAppState.gCurrentScd.reset();
+            //             gAppState.gLastSendScd.reset();
+            //             nsensors::initSCD41();  // Initialize the SCD4X sensor
+            // #endif
+            // #ifdef ENABLE_RD03D
+            //             gAppState.gCurrentRd03d.reset();
+            //             nsensors::nrd03d::begin(16, 17);  // Initialize RD03D sensor UART rx and tx pin
+            // #endif
+            //             ntask::set_main(state, &gAppTask, &gMainProgram);
+            //             nnode::initialize(state, &gAppTask);
+            setup_lvgl();
         }
 
-        void tick(state_t* state) { ntask::tick(state, &gAppTask); }
+        void tick(state_t* state)
+        {
+            nlog::println("Tick");
+            loop_lvgl();
+            // ntask::tick(state, &gAppTask);
+        }
 
     }  // namespace napp
 }  // namespace ncore

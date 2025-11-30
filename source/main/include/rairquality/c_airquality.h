@@ -1,14 +1,15 @@
 #ifndef __APP_AIR_QUALITY_H__
 #define __APP_AIR_QUALITY_H__
-#include "rdno_core/c_target.h"
+#include "rcore/c_target.h"
 #ifdef USE_PRAGMA_ONCE
-#    pragma once
+    #pragma once
 #endif
 
 namespace ncore
 {
-
-
 }  // namespace ncore
+
+void setup_lvgl();
+void loop_lvgl();
 
 #endif
