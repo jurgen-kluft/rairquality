@@ -1,30 +1,7 @@
-#ifndef EEZ_LVGL_UI_GUI_H
-#define EEZ_LVGL_UI_GUI_H
+#ifndef __REMOTE_UI_GUI_H__
+#define __REMOTE_UI_GUI_H__
 
-#include "rlvgl/lvgl.h"
+void ui_init();
+void ui_tick();
 
-#if defined(EEZ_FOR_LVGL)
-    #include <eez/flow/lvgl_api.h>
-#endif
-
-#if !defined(EEZ_FOR_LVGL)
-    #include "rairquality/screens.h"
-#endif
-
-#ifdef __cplusplus
-extern "C"
-{
-#endif
-
-    void ui_init();
-    void ui_tick();
-
-#if !defined(EEZ_FOR_LVGL)
-    void loadScreen(enum ScreensEnum screenId);
-#endif
-
-#ifdef __cplusplus
-}
-#endif
-
-#endif  // EEZ_LVGL_UI_GUI_H
+#endif  // __REMOTE_UI_GUI_H__

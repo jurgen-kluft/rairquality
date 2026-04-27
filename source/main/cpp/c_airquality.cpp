@@ -121,9 +121,9 @@ namespace ncore
             gAppState.gLastSendBh.lux = lux;
 
             // Write a custom (binary-format) network message
-            gAppState.gSensorPacket.begin(state->wifi->m_mac);
+            gAppState.gSensorPacket.begin(state->MACAddress);
             nlog::printf("Light: %d lx\n", va_t((u32)lux));
-            gAppState.gSensorPacket.write(npacket::nsensorid::ID_LIGHT, lux);
+            gAppState.gSensorPacket.write(npacket::sensor_block_t::ID_LIGHT, lux);
             if (gAppState.gSensorPacket.count() > 0)
             {
                 gAppState.gSensorPacket.finalize();
@@ -156,7 +156,7 @@ namespace ncore
     {
 #ifdef ENABLE_BME280
         // Write a custom (binary-format) network message
-        gAppState.gSensorPacket.begin(state->wifi->m_mac);
+        gAppState.gSensorPacket.begin(state->MACAddress);
 
         const s8  temperature = gAppState.gCurrentBme.temperature;
         const u16 pressure    = gAppState.gCurrentBme.pressure;
@@ -213,7 +213,7 @@ namespace ncore
     {
 #ifdef ENABLE_SCD41
         // Write a custom (binary-format) network message
-        gAppState.gSensorPacket.begin(state->wifi->m_mac);
+        gAppState.gSensorPacket.begin(state->MACAddress);
 
         const u16 co2         = gAppState.gCurrentScd.co2;
         const s8  temperature = gAppState.gCurrentScd.temperature;
@@ -296,7 +296,7 @@ namespace ncore
     {
 #ifdef ENABLE_RD03D
         // Write a custom (binary-format) network message
-        gAppState.gSensorPacket.begin(state->wifi->m_mac);
+        gAppState.gSensorPacket.begin(state->MACAddress);
 
         for (s8 i = 0; i < 3; ++i)
         {

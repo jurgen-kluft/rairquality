@@ -9,7 +9,7 @@ namespace ncore
 {
 }  // namespace ncore
 
-void setup_lvgl();
-void loop_lvgl();
+void setup_display();
+void loop_display();
 
 #endif
