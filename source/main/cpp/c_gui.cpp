@@ -20,42 +20,17 @@
 #define EXAMPLE_LCD_H_RES 410
 #define EXAMPLE_LCD_V_RES 502
 
-
-static uint32_t my_tick_cb(void) { return ncore::ntimer::millis(); }
-
-static void my_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map)
-{
-    if (disp == nullptr || area == nullptr || px_map == nullptr || disp->user_data == nullptr)
-    {
-        ncore::nserial::println("my_flush_cb, some parameter is null");
-        return;
-    }
-    //ncore::nserial::println("my_flush_cb:begin");
-
-    /*Write px_map to the area->x1, area->x2, area->y1, area->y2 area of the
-     *frame buffer or external display controller. */
-    const int offsetx1 = area->x1;  //+ 0x16;
-    const int offsetx2 = area->x2;  //+ 0x16;
-    const int offsety1 = area->y1;
-    const int offsety2 = area->y2;
-
-    // copy a buffer's content to a specific area of the display
-    esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)disp->user_data;
-    esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, px_map);
-
-    //ncore::nserial::println("my_flush_cb:end");
-}
-
 static void my_amoled_flush_ready(void *user_ctx)
 {
     if (user_ctx == nullptr)
         return;
-    //ncore::nserial::println("my_amoled_flush_cb:begin");
-    lv_display_t *display = *((lv_display_t **)user_ctx);
-    if (display != nullptr)
+        
+    // ncore::nserial::println("my_amoled_flush_cb:begin");
+    //lv_display_t *display = *((lv_display_t **)user_ctx);
+    //if (display != nullptr)
     {
-        //lv_disp_flush_ready(display);
-        //ncore::nserial::println("my_amoled_flush_cb:end");
+        // lv_disp_flush_ready(display);
+        // ncore::nserial::println("my_amoled_flush_cb:end");
     }
 }
 
@@ -66,7 +41,7 @@ void setup_display()
     // Initialize the LCD panel to obtain the panel handle for later use
     ncore::nserial::println("init_dwo_display");
 
-    my_flush_ready.m_cb = my_amoled_flush_ready;
+    my_flush_ready.m_cb       = my_amoled_flush_ready;
     my_flush_ready.m_user_ctx = nullptr;
 
     ndwo::panel_handles_t panel_handles;
@@ -79,5 +54,20 @@ void setup_display()
 
 void loop_display()
 {
+    // if received a new frame, flush it to the LCD panel
+    bool flush = false;
 
+    if (flush)
+    {
+        // Write px_map to the area->x1, area->x2, area->y1, area->y2 area of the
+        // frame buffer or external display controller.
+        const int offsetx1 = area->x1;  //+ 0x16;
+        const int offsetx2 = area->x2;  //+ 0x16;
+        const int offsety1 = area->y1;
+        const int offsety2 = area->y2;
+
+        // copy a buffer's content to a specific area of the display
+        esp_lcd_panel_handle_t panel_handle = (esp_lcd_panel_handle_t)disp->user_data;
+        esp_lcd_panel_draw_bitmap(panel_handle, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, px_map);
+    }
 }

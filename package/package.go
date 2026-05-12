@@ -26,7 +26,7 @@ func GetPackage() *denv.Package {
 	airquality := denv.SetupCppAppProject(mainpkg, "airquality", "main")
 	airquality.AddDependencies(wifipkg.GetMainLib())
 	airquality.AddDependencies(sensorspkg.GetMainLib())
-	airquality.AddDependencies(lcdpkg.GetMainLib())
+	airquality.AddDependency(lcdpkg.GetLibrary("lib_dwo"))
 
 	mainpkg.AddMainApp(airquality)
 

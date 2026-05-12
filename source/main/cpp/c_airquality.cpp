@@ -1,6 +1,5 @@
 #include "rairquality/c_airquality.h"
 
-#include "rcore/c_malloc.h"
 #include "rcore/c_gpio.h"
 #include "rcore/c_timer.h"
 #include "rcore/c_log.h"
@@ -13,10 +12,10 @@
 #include "rwifi/c_tcp.h"
 #include "rwifi/c_node.h"
 
-#include "rsensors/c_bh1750.h"
-#include "rsensors/c_bme280.h"
-#include "rsensors/c_scd4x.h"
-#include "rsensors/c_rd03d.h"
+#include "lib_bh1750/c_bh1750.h"
+#include "lib_bme280/c_bme280.h"
+#include "lib_scd41/c_scd41.h"
+#include "lib_rd03d/c_rd03d.h"
 
 #define ENABLE_BH1750
 #define ENABLE_BME280
@@ -79,7 +78,7 @@ namespace ncore
 
     struct state_app_t
     {
-        npacket::sensorpacket_t gSensorPacket;  // Sensor packet for sending data
+        npacket::packet_t gSensorPacket;  // Sensor packet for sending data
 
         bme280_data_t gCurrentBme;
         bme280_data_t gLastSendBme;
@@ -90,7 +89,8 @@ namespace ncore
         scd41_data_t gCurrentScd;
         scd41_data_t gLastSendScd;
 
-        rd03d_data_t gCurrentRd03d;
+        rd03d_data_t               gCurrentRd03d;
+        nsensors::nrd03d::sensor_t gRd03dSensor;
     };
     state_app_t  gAppState;
     state_task_t gAppTask;
@@ -120,15 +120,12 @@ namespace ncore
         {
             gAppState.gLastSendBh.lux = lux;
 
-            // Write a custom (binary-format) network message
-            gAppState.gSensorPacket.begin(state->MACAddress);
+            npacket::packet_init(gAppState.gSensorPacket);
             nlog::printf("Light: %d lx\n", va_t((u32)lux));
-            gAppState.gSensorPacket.write(npacket::sensor_block_t::ID_LIGHT, lux);
-            if (gAppState.gSensorPacket.count() > 0)
-            {
-                gAppState.gSensorPacket.finalize();
-                nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
-            }
+            npacket::packet_write(gAppState.gSensorPacket, npacket::ID_LIGHT, state->MACAddress, (u16)lux);
+
+            // Send the sensor data to the server
+            nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
 #endif
         return ntask::RESULT_OK;
@@ -156,7 +153,7 @@ namespace ncore
     {
 #ifdef ENABLE_BME280
         // Write a custom (binary-format) network message
-        gAppState.gSensorPacket.begin(state->MACAddress);
+        npacket::packet_init(gAppState.gSensorPacket);
 
         const s8  temperature = gAppState.gCurrentBme.temperature;
         const u16 pressure    = gAppState.gCurrentBme.pressure;
@@ -165,26 +162,27 @@ namespace ncore
         {
             gAppState.gLastSendBme.temperature = temperature;
             nlog::printf("Temperature: %d °C\n", va_t((s32)temperature));
-            gAppState.gSensorPacket.write(npacket::nsensorid::ID_TEMPERATURE, (u16)temperature);
+            npacket::packet_write(gAppState.gSensorPacket, npacket::ID_TEMPERATURE, state->MACAddress, (u16)temperature);
         }
         if (gAppState.gLastSendBme.pressure != pressure)
         {
             gAppState.gLastSendBme.pressure = pressure;
             nlog::printf("Pressure: %d hPa\n", va_t((u32)pressure));
-            gAppState.gSensorPacket.write(npacket::nsensorid::ID_PRESSURE, (u16)pressure);
+            npacket::packet_write(gAppState.gSensorPacket, npacket::ID_PRESSURE, state->MACAddress, (u16)pressure);
         }
         if (gAppState.gLastSendBme.humidity != humidity)
         {
             gAppState.gLastSendBme.humidity = humidity;
             nlog::printf("Humidity: %d %%\n", va_t((u32)humidity));
-            gAppState.gSensorPacket.write(npacket::nsensorid::ID_HUMIDITY, (u16)humidity);
+            npacket::packet_write(gAppState.gSensorPacket, npacket::ID_HUMIDITY, state->MACAddress, (u16)humidity);
         }
 
-        if (gAppState.gSensorPacket.count() > 0)
+        // Send the sensor data to the server
+        if (gAppState.gSensorPacket.Size > 0)
         {
-            gAppState.gSensorPacket.finalize();
             nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
+
 #endif
         return ntask::RESULT_OK;
     }
@@ -213,7 +211,7 @@ namespace ncore
     {
 #ifdef ENABLE_SCD41
         // Write a custom (binary-format) network message
-        gAppState.gSensorPacket.begin(state->MACAddress);
+        npacket::packet_init(gAppState.gSensorPacket);
 
         const u16 co2         = gAppState.gCurrentScd.co2;
         const s8  temperature = gAppState.gCurrentScd.temperature;
@@ -223,24 +221,26 @@ namespace ncore
         {
             gAppState.gLastSendScd.co2 = co2;
             nlog::printf("SCD CO2: %d ppm\n", va_t((u32)co2));
-            gAppState.gSensorPacket.write(npacket::nsensorid::ID_CO2, (u16)co2);
+            // gAppState.gSensorPacket.write(npacket::nsensorid::ID_CO2, (u16)co2);
+            npacket::packet_write(gAppState.gSensorPacket, npacket::ID_CO2, state->MACAddress, (u16)co2);
         }
         if (gAppState.gLastSendScd.temperature != temperature)
         {
             gAppState.gLastSendScd.temperature = temperature;
             nlog::printf("SCD Temperature: %d °C\n", va_t((s32)temperature));
-            gAppState.gSensorPacket.write(npacket::nsensorid::ID_TEMPERATURE, (u16)temperature);
+            // gAppState.gSensorPacket.write(npacket::nsensorid::ID_TEMPERATURE, (u16)temperature);
+            npacket::packet_write(gAppState.gSensorPacket, npacket::ID_TEMPERATURE, state->MACAddress, (u16)temperature);
         }
         if (gAppState.gLastSendScd.humidity != humidity)
         {
             gAppState.gLastSendScd.humidity = humidity;
             nlog::printf("SCD Humidity: %d %%\n", va_t((u32)humidity));
-            gAppState.gSensorPacket.write(npacket::nsensorid::ID_HUMIDITY, (u16)humidity);
+            // gAppState.gSensorPacket.write(npacket::nsensorid::ID_HUMIDITY, (u16)humidity);
+            npacket::packet_write(gAppState.gSensorPacket, npacket::ID_HUMIDITY, state->MACAddress, (u16)humidity);
         }
 
-        if (gAppState.gSensorPacket.count() > 0)
+        if (gAppState.gSensorPacket.Size > 0)
         {
-            gAppState.gSensorPacket.finalize();
             nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
 #endif
@@ -251,12 +251,12 @@ namespace ncore
     ntask::result_t read_rd03d(state_t* state)
     {
 #ifdef ENABLE_RD03D
-        if (nsensors::nrd03d::update())
+        if (nsensors::nrd03d::update(gAppState.gRd03dSensor))
         {
             for (s8 i = 0; i < 3; ++i)
             {
                 nsensors::nrd03d::target_t tgt;
-                if (nsensors::nrd03d::getTarget(i, tgt))
+                if (nsensors::nrd03d::getTarget(gAppState.gRd03dSensor, i, tgt))
                 {
                     gAppState.gCurrentRd03d.DetectionBits[i] = (gAppState.gCurrentRd03d.DetectionBits[i] << 1) | 1;
                     // nlog::printf("T%d: %d, %d\n", va_t(i), va_t(tgt[i].x), va_t(tgt[i].y));
@@ -296,7 +296,7 @@ namespace ncore
     {
 #ifdef ENABLE_RD03D
         // Write a custom (binary-format) network message
-        gAppState.gSensorPacket.begin(state->MACAddress);
+        npacket::packet_init(gAppState.gSensorPacket);
 
         for (s8 i = 0; i < 3; ++i)
         {
@@ -304,13 +304,12 @@ namespace ncore
             if (gAppState.gCurrentRd03d.LastSendDetected[i] != detected)
             {
                 gAppState.gCurrentRd03d.LastSendDetected[i] = detected;
-                gAppState.gSensorPacket.write(npacket::nsensorid::ID_PRESENCE1 + i, detected);
+                npacket::packet_write(gAppState.gSensorPacket, npacket::ID_PRESENCE1 + i, state->MACAddress, detected);
             }
         }
 
-        if (gAppState.gSensorPacket.count() > 0)
+        if (gAppState.gSensorPacket.Size > 0)
         {
-            gAppState.gSensorPacket.finalize();
             nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
 #endif
@@ -436,13 +435,11 @@ namespace ncore
             // #endif
             //             ntask::set_main(state, &gAppTask, &gMainProgram);
             //             nnode::initialize(state, &gAppTask);
-            setup_lvgl();
         }
 
         void tick(state_t* state)
         {
             nlog::println("Tick");
-            loop_lvgl();
             // ntask::tick(state, &gAppTask);
         }
 
