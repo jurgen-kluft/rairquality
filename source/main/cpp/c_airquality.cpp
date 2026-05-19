@@ -1,5 +1,6 @@
 #include "rairquality/c_airquality.h"
 
+#include "rcore/c_app.h"
 #include "rcore/c_gpio.h"
 #include "rcore/c_timer.h"
 #include "rcore/c_log.h"
@@ -8,14 +9,18 @@
 #include "rcore/c_system.h"
 #include "rcore/c_task.h"
 #include "rcore/c_wire.h"
+#include "ccore/c_random.h"
 
-#include "rwifi/c_tcp.h"
-#include "rwifi/c_node.h"
+#include "rwifi/c_wifi_mgr.h"
+#include "rwifi/c_tcp_client.h"
+#include "rwifi/c_network_mgr.h"
 
 #include "lib_bh1750/c_bh1750.h"
 #include "lib_bme280/c_bme280.h"
 #include "lib_scd41/c_scd41.h"
 #include "lib_rd03d/c_rd03d.h"
+
+#include "lib_wcs/c_lcd.h"
 
 #define ENABLE_BH1750
 #define ENABLE_BME280
@@ -80,6 +85,13 @@ namespace ncore
     {
         npacket::packet_t gSensorPacket;  // Sensor packet for sending data
 
+        nwifi::wifi_manager_t gWifiManager;  // WiFi manager for network connectivity
+        nwifi::wifi_config_t  gWifiConfig;   // WiFi configuration
+        ntcp::tcp_client_t    gTcpClient;    // TCP client for server communication
+        ntcp::config_t        gTcpConfig;    // TCP client configuration
+
+        xor_random_t gRandom;  // XORShift random number generator for any randomization needs
+
         bme280_data_t gCurrentBme;
         bme280_data_t gLastSendBme;
 
@@ -89,8 +101,7 @@ namespace ncore
         scd41_data_t gCurrentScd;
         scd41_data_t gLastSendScd;
 
-        rd03d_data_t               gCurrentRd03d;
-        nsensors::nrd03d::sensor_t gRd03dSensor;
+        rd03d_data_t gCurrentRd03d;
     };
     state_app_t  gAppState;
     state_task_t gAppTask;
@@ -125,7 +136,7 @@ namespace ncore
             npacket::packet_write(gAppState.gSensorPacket, npacket::ID_LIGHT, state->MACAddress, (u16)lux);
 
             // Send the sensor data to the server
-            nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
+            ntcp::send(gAppState.gTcpClient, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
 #endif
         return ntask::RESULT_OK;
@@ -180,7 +191,7 @@ namespace ncore
         // Send the sensor data to the server
         if (gAppState.gSensorPacket.Size > 0)
         {
-            nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
+            ntcp::send(gAppState.gTcpClient, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
 
 #endif
@@ -241,7 +252,7 @@ namespace ncore
 
         if (gAppState.gSensorPacket.Size > 0)
         {
-            nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
+            ntcp::send(gAppState.gTcpClient, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
 #endif
 
@@ -251,12 +262,12 @@ namespace ncore
     ntask::result_t read_rd03d(state_t* state)
     {
 #ifdef ENABLE_RD03D
-        if (nsensors::nrd03d::update(gAppState.gRd03dSensor))
+        if (nsensors::updateRD03D())
         {
             for (s8 i = 0; i < 3; ++i)
             {
                 nsensors::nrd03d::target_t tgt;
-                if (nsensors::nrd03d::getTarget(gAppState.gRd03dSensor, i, tgt))
+                if (nsensors::getRD03DTarget(i, tgt))
                 {
                     gAppState.gCurrentRd03d.DetectionBits[i] = (gAppState.gCurrentRd03d.DetectionBits[i] << 1) | 1;
                     // nlog::printf("T%d: %d, %d\n", va_t(i), va_t(tgt[i].x), va_t(tgt[i].y));
@@ -310,7 +321,7 @@ namespace ncore
 
         if (gAppState.gSensorPacket.Size > 0)
         {
-            nnode::send_sensor_data(state, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
+            ntcp::send(gAppState.gTcpClient, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
         }
 #endif
         return ntask::RESULT_OK;
@@ -322,125 +333,60 @@ namespace ncore
 {
     namespace napp
     {
-        ntask::periodic_t periodic_read_bh1750(5 * 1000);
-        ntask::periodic_t periodic_read_bme280(10 * 1000);
-        ntask::periodic_t periodic_read_scd41(30 * 1000);
-        ntask::periodic_t periodic_read_rd03d(100);
-
-        ntask::periodic_t periodic_send_bh1750((30 * 1000) + 1);
-        ntask::periodic_t periodic_send_bme280((60 * 1000) + 2);
-        ntask::periodic_t periodic_send_scd41((2 * 60 * 1000) - 1);
-        ntask::periodic_t periodic_send_rd03d(200 + 3);
-
-        void main_program(ntask::scheduler_t* exec, state_t* state)
-        {
-            if (ntask::is_first_call(exec))
-            {
-                ntask::init_periodic(exec, periodic_read_bh1750);
-                ntask::init_periodic(exec, periodic_read_bme280);
-                ntask::init_periodic(exec, periodic_read_scd41);
-                ntask::init_periodic(exec, periodic_read_rd03d);
-
-                ntask::init_periodic(exec, periodic_send_bh1750);
-                ntask::init_periodic(exec, periodic_send_bme280);
-                ntask::init_periodic(exec, periodic_send_scd41);
-                ntask::init_periodic(exec, periodic_send_rd03d);
-            }
-
-            // Reading sensor data
-
-#ifdef ENABLE_BH1750
-            if (ntask::periodic(exec, periodic_read_bh1750))
-            {
-                ntask::call(exec, read_bh1750);
-            }
-#endif
-#ifdef ENABLE_BME280
-            if (ntask::periodic(exec, periodic_read_bme280))
-            {
-                ntask::call(exec, read_bme280);
-            }
-#endif
-#ifdef ENABLE_SCD41
-            if (ntask::periodic(exec, periodic_read_scd41))
-            {
-                ntask::call(exec, read_scd41);
-            }
-#endif
-#ifdef ENABLE_RD03D
-            if (ntask::periodic(exec, periodic_read_rd03d))
-            {
-                ntask::call(exec, read_rd03d);
-            }
-#endif
-
-            // Sending sensor data
-
-#ifdef ENABLE_BH1750
-            if (ntask::periodic(exec, periodic_send_bh1750))
-            {
-                ntask::call(exec, send_bh1750);
-            }
-#endif
-#ifdef ENABLE_BME280
-            if (ntask::periodic(exec, periodic_send_bme280))
-            {
-                ntask::call(exec, send_bme280);
-            }
-#endif
-#ifdef ENABLE_SCD41
-            if (ntask::periodic(exec, periodic_send_scd41))
-            {
-                ntask::call(exec, send_scd41);
-            }
-#endif
-#ifdef ENABLE_RD03D
-            if (ntask::periodic(exec, periodic_send_rd03d))
-            {
-                ntask::call(exec, send_rd03d);
-            }
-#endif
-        }
-        ntask::program_t gMainProgram(main_program);
-
 #define SDA_PIN 21
 #define SCL_PIN 22
 
-        void presetup(state_t* state)
+#define RD03D_RX_PIN 16
+#define RD03D_TX_PIN 17
+
+        void wakeup(state_t* state, ncore::nwakeup::reason_t reason)
         {
-            // Initialize I2C bus
-            //            nwire::begin(SDA_PIN, SCL_PIN);
+
         }
+
+        void presetup(state_t* state) {}
+
+        ntimer::periodic_task_t gBlinkLedTask = {1000, 0, []() { nlcd::nwcs::led_toggle(); }};
 
         void setup(state_t* state)
         {
-            // #ifdef ENABLE_BH1750
-            //             gAppState.gCurrentBh.reset();
-            //             gAppState.gLastSendBh.reset();
-            //             nsensors::initBH1750();  // Initialize the BH1750 sensor
-            // #endif
-            // #ifdef ENABLE_BME280
-            //             gAppState.gCurrentBme.reset();
-            //             gAppState.gLastSendBme.reset();
-            //             nsensors::initBME280();  // Initialize the BME280 sensor
-            // #endif
-            // #ifdef ENABLE_SCD41
-            //             gAppState.gCurrentScd.reset();
-            //             gAppState.gLastSendScd.reset();
-            //             nsensors::initSCD41();  // Initialize the SCD4X sensor
-            // #endif
-            // #ifdef ENABLE_RD03D
-            //             gAppState.gCurrentRd03d.reset();
-            //             nsensors::nrd03d::begin(16, 17);  // Initialize RD03D sensor UART rx and tx pin
-            // #endif
-            //             ntask::set_main(state, &gAppTask, &gMainProgram);
-            //             nnode::initialize(state, &gAppTask);
+            nwifi::init_wifi_config(gAppState.gWifiConfig, WIFI_SSID(), WIFI_PASSWORD());
+            nwifi::setup(gAppState.gWifiManager, &gAppState.gWifiConfig);
+            nwifi::activate(gAppState.gWifiManager);
+
+            void* socket = ntcp::setup_default(&gAppState.gTcpConfig);
+            ntcp::setup(gAppState.gTcpClient, &gAppState.gTcpConfig, socket, SERVER_IP(), SERVER_TCPPORT(), nullptr, 0);
+            ntcp::activate(gAppState.gTcpClient);
+
+            nsensors::initBME280();
+            nsensors::initBH1750();
+            nsensors::initSCD41();
+            nsensors::initRD03D(RD03D_RX_PIN, RD03D_TX_PIN);
         }
+
+        static u64 toggle_lcd_fill_time = 0;
 
         void tick(state_t* state)
         {
             nlog::println("Tick");
-            // ntask::tick(state, &gAppTask);
+
+            // Network tick handles WiFi state machine and TCP client state machine, ensuring TCP only runs when WiFi is connected
+            nnetwork::tick(gAppState.gWifiManager, gAppState.gTcpClient);
+
+            ntimer::tick(&gBlinkLedTask);
+
+            if (ntimer::millis() - toggle_lcd_fill_time > 2000)
+            {
+                // Fill a random area with a random color every 2 seconds
+                u16 color = (u16)g_random_u32(&gAppState.gRandom, 16);  // Random RGB565 color
+                u16 sx    = (u16)g_random_u32_range(&gAppState.gRandom, 0, nlcd::nwcs::width() - 51);
+                u16 sy    = (u16)g_random_u32_range(&gAppState.gRandom, 0, nlcd::nwcs::height() - 51);
+                u16 ex    = sx + (g_random_u32_range(&gAppState.gRandom, 0, 40) + 10);  // Random width between 10 and 50 pixels
+                u16 ey    = sy + (g_random_u32_range(&gAppState.gRandom, 0, 40) + 10);  // Random height between 10 and 50 pixels
+
+                nlcd::nwcs::draw_rectangle(sx, sy, ex, ey, color);
+                toggle_lcd_fill_time = ntimer::millis();
+            }
         }
 
     }  // namespace napp
