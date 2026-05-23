@@ -346,7 +346,7 @@ namespace ncore
 
         void presetup(state_t* state) {}
 
-        ntimer::periodic_task_t gBlinkLedTask = {1000, 0, []() { nlcd::nwcs::led_toggle(); }};
+        ntimer::periodic_task_t gBlinkLedTask = {1000, 0, []() { nlcd::led_toggle(); }};
 
         void setup(state_t* state)
         {
@@ -355,7 +355,7 @@ namespace ncore
             nwifi::activate(gAppState.gWifiManager);
 
             void* socket = ntcp::setup_default(&gAppState.gTcpConfig);
-            ntcp::setup(gAppState.gTcpClient, &gAppState.gTcpConfig, socket, SERVER_IP(), SERVER_TCPPORT(), nullptr, 0);
+            ntcp::setup(gAppState.gTcpClient, &gAppState.gTcpConfig, socket, SENSOR_SERVER_IP(), SENSOR_SERVER_TCPPORT(), nullptr, 0);
             ntcp::activate(gAppState.gTcpClient);
 
             nsensors::initBME280();
@@ -379,12 +379,12 @@ namespace ncore
             {
                 // Fill a random area with a random color every 2 seconds
                 u16 color = (u16)g_random_u32(&gAppState.gRandom, 16);  // Random RGB565 color
-                u16 sx    = (u16)g_random_u32_range(&gAppState.gRandom, 0, nlcd::nwcs::width() - 51);
-                u16 sy    = (u16)g_random_u32_range(&gAppState.gRandom, 0, nlcd::nwcs::height() - 51);
+                u16 sx    = (u16)g_random_u32_range(&gAppState.gRandom, 0, nlcd::width() - 51);
+                u16 sy    = (u16)g_random_u32_range(&gAppState.gRandom, 0, nlcd::height() - 51);
                 u16 ex    = sx + (g_random_u32_range(&gAppState.gRandom, 0, 40) + 10);  // Random width between 10 and 50 pixels
                 u16 ey    = sy + (g_random_u32_range(&gAppState.gRandom, 0, 40) + 10);  // Random height between 10 and 50 pixels
 
-                nlcd::nwcs::draw_rectangle(sx, sy, ex, ey, color);
+                nlcd::draw_rectangle(sx, sy, ex, ey, color);
                 toggle_lcd_fill_time = ntimer::millis();
             }
         }
