@@ -85,10 +85,9 @@ namespace ncore
     {
         nnet::msg_t gSensorPacket;  // Sensor packet for sending data
 
-        nnet::wifi_manager_t gWifiManager;  // WiFi manager for network connectivity
-        nnet::wifi_config_t  gWifiConfig;   // WiFi configuration
-        nnet::tcp_client_t   gTcpClient;    // TCP client for server communication
-        nnet::config_t       gTcpConfig;    // TCP client configuration
+        nnet::wifi_manager_t* gWifiManager;  // WiFi manager for network connectivity
+        nnet::tcp_client_t    gTcpClient;    // TCP client for server communication
+        nnet::config_t        gTcpConfig;    // TCP client configuration
 
         xor_random_t gRandom;  // XORShift random number generator for any randomization needs
 
@@ -303,7 +302,7 @@ namespace ncore
             if (gAppState.gCurrentRd03d.LastSendDetected[i] != detected)
             {
                 gAppState.gCurrentRd03d.LastSendDetected[i] = detected;
-                msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_PRESENCE1 + i, detected);
+                msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_BINARY + i, detected);
             }
         }
 
@@ -338,13 +337,12 @@ namespace ncore
 
         void setup(state_t* state)
         {
-            nnet::init_wifi_config(gAppState.gWifiConfig, WIFI_SSID(), WIFI_PASSWORD());
-            nnet::setup(gAppState.gWifiManager, &gAppState.gWifiConfig);
+            gAppState.gWifiManager = nnet::create_wifi_mgr(WIFI_SSID(), WIFI_PASSWORD());
             nnet::activate(gAppState.gWifiManager);
 
             void* socket = nnet::setup_default(&gAppState.gTcpConfig);
-            nnet::setup(gAppState.gTcpClient, &gAppState.gTcpConfig, socket, SENSOR_SERVER_IP(), SENSOR_SERVER_TCPPORT());
-            nnet::connect(gAppState.gTcpClient);
+            nnet::setup(gAppState.gTcpClient, &gAppState.gTcpConfig, socket);
+            nnet::connect(gAppState.gTcpClient, SENSOR_SERVER_IP(), SENSOR_SERVER_TCPPORT());
 
             nsensors::initBME280();
             nsensors::initBH1750();
@@ -358,8 +356,8 @@ namespace ncore
         {
             nlog::println("Tick");
 
-            // Network tick handles WiFi state machine and TCP client state machine, ensuring TCP only runs when WiFi is connected
-            nnet::tick_tcp_client(&gAppState.gWifiManager, gAppState.gTcpClient);
+            nnet::tick(gAppState.gWifiManager);
+            nnet::tick_tcp_client(nnet::get_link_state(gAppState.gWifiManager), gAppState.gTcpClient);
 
             if (ntimer::millis() - toggle_lcd_fill_time > 2000)
             {
