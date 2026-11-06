@@ -33,7 +33,7 @@ func GetPackage() *denv.Package {
 	airquality.AddDependency(sensorspkg.GetLibrary("library_bme280"))
 	airquality.AddDependency(sensorspkg.GetLibrary("library_scd41"))
 	airquality.AddDependency(sensorspkg.GetLibrary("library_rd03d"))
-	airquality.AddDependency(lcdpkg.GetLibrary("library_wcs"))
+	airquality.AddDependency(lcdpkg.GetLibrary("library_guition"))
 
 	mainpkg.AddMainApp(airquality)
 

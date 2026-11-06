@@ -20,7 +20,7 @@
 #include "lib_scd41/c_scd41.h"
 #include "lib_rd03d/c_rd03d.h"
 
-#include "lib_wcs/c_lcd.h"
+#include "lib_guition/c_lcd.h"
 
 #define ENABLE_BH1750
 #define ENABLE_BME280
@@ -68,16 +68,16 @@ namespace ncore
     {
         u32 DetectionBits[3];
         u8  Detected[3];
-        u8  LastSendDetected[3];
+        u8  LastSendPresence;
 
         void reset()
         {
             for (s8 i = 0; i < 3; ++i)
             {
-                DetectionBits[i]    = 0;
-                Detected[i]         = 4;  // Unknown state
-                LastSendDetected[i] = 3;
+                DetectionBits[i] = 0;
+                Detected[i]      = 0;
             }
+            LastSendPresence = 0xff;
         }
     };
 
@@ -92,19 +92,27 @@ namespace ncore
         xor_random_t gRandom;  // XORShift random number generator for any randomization needs
 
         bme280_data_t gCurrentBme;
-        bme280_data_t gLastSendBme;
-
         bh1750_data_t gCurrentBh;
-        bh1750_data_t gLastSendBh;
+        scd41_data_t  gCurrentScd;
+        rd03d_data_t  gCurrentRd03d;
 
-        scd41_data_t gCurrentScd;
-        scd41_data_t gLastSendScd;
+        ntimer::periodic_task_t gReadBme280Task;
+        ntimer::periodic_task_t gReadBh1750Task;
+        ntimer::periodic_task_t gReadScd41Task;
+        ntimer::periodic_task_t gSendEnvironmentTask;
+        ntimer::periodic_task_t gProcessRd03dTask;
 
-        rd03d_data_t gCurrentRd03d;
+        void reset()
+        {
+            gCurrentBme.reset();
+            gCurrentBh.reset();
+            gCurrentScd.reset();
+            gCurrentRd03d.reset();
+        }
     };
     state_app_t gAppState;
 
-    void read_bh1750(state_t* state)
+    void read_bh1750(void* user, u64 now_ms)
     {
 #ifdef ENABLE_BH1750
         // TODO whenever a sensor cannot be read (faulty?) we need to know so that we can
@@ -120,26 +128,7 @@ namespace ncore
 #endif
     }
 
-    void send_bh1750(state_t* state)
-    {
-#ifdef ENABLE_BH1750
-        const i32 lux = gAppState.gCurrentBh.lux;
-        if (gAppState.gLastSendBh.lux != lux)
-        {
-            gAppState.gLastSendBh.lux = lux;
-
-            nlog::printf("Light: %d lx\n", va_t(lux));
-
-            nnet::msg_init(gAppState.gSensorPacket, nnet::MSG_TYPE_SENSOR_DATA, state->MACAddress);
-            msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_LIGHT, (u16)lux);
-
-            // Send the sensor data to the server
-            nnet::send(gAppState.gTcpClient, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
-        }
-#endif
-    }
-
-    void read_bme280(state_t* state)
+    void read_bme280(void* user, u64 now_ms)
     {
 #ifdef ENABLE_BME280
         // Read the BME280 sensor data
@@ -156,44 +145,7 @@ namespace ncore
 #endif
     }
 
-    void send_bme280(state_t* state)
-    {
-#ifdef ENABLE_BME280
-        // Write a custom (binary-format) network message
-        nnet::msg_init(gAppState.gSensorPacket, nnet::MSG_TYPE_SENSOR_DATA, state->MACAddress);
-
-        const s8  temperature = gAppState.gCurrentBme.temperature;
-        const u16 pressure    = gAppState.gCurrentBme.pressure;
-        const u8  humidity    = gAppState.gCurrentBme.humidity;
-        if (gAppState.gLastSendBme.temperature != temperature)
-        {
-            gAppState.gLastSendBme.temperature = temperature;
-            nlog::printf("Temperature: %d °C\n", va_t((s32)temperature));
-            msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_TEMPERATURE, (u16)temperature);
-        }
-        if (gAppState.gLastSendBme.pressure != pressure)
-        {
-            gAppState.gLastSendBme.pressure = pressure;
-            nlog::printf("Pressure: %d hPa\n", va_t((u32)pressure));
-            msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_PRESSURE, (u16)pressure);
-        }
-        if (gAppState.gLastSendBme.humidity != humidity)
-        {
-            gAppState.gLastSendBme.humidity = humidity;
-            nlog::printf("Humidity: %d %%\n", va_t((u32)humidity));
-            msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_HUMIDITY, (u16)humidity);
-        }
-
-        // Send the sensor data to the server
-        if (gAppState.gSensorPacket.Size > 0)
-        {
-            nnet::send(gAppState.gTcpClient, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
-        }
-
-#endif
-    }
-
-    void read_scd41(state_t* state)
+    void read_scd41(void* user, u64 now_ms)
     {
 #ifdef ENABLE_SCD41
         // Read the SCD41 sensor data
@@ -211,104 +163,57 @@ namespace ncore
 #endif
     }
 
-    void send_scd41(state_t* state)
+    void send_environment(void*, u64)
     {
-#ifdef ENABLE_SCD41
-        // Write a custom (binary-format) network message
-        nnet::msg_init(gAppState.gSensorPacket, nnet::MSG_TYPE_SENSOR_DATA, state->MACAddress);
-
-        const i32 co2         = gAppState.gCurrentScd.co2;
-        const i32 temperature = gAppState.gCurrentScd.temperature;
-        const i32 humidity    = gAppState.gCurrentScd.humidity;
-
-        if (gAppState.gLastSendScd.co2 != co2)
-        {
-            gAppState.gLastSendScd.co2 = co2;
-            nlog::printf("SCD CO2: %d ppm\n", va_t(co2));
-            msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_CO2, co2);
-        }
-        if (gAppState.gLastSendScd.temperature != temperature)
-        {
-            gAppState.gLastSendScd.temperature = temperature;
-            nlog::printf("SCD Temperature: %d °C\n", va_t(temperature));
-            msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_TEMPERATURE, temperature);
-        }
-        if (gAppState.gLastSendScd.humidity != humidity)
-        {
-            gAppState.gLastSendScd.humidity = humidity;
-            nlog::printf("SCD Humidity: %d %%\n", va_t(humidity));
-            msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_HUMIDITY, humidity);
-        }
-
-        if (gAppState.gSensorPacket.Size > 0)
-        {
-            nnet::send(gAppState.gTcpClient, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
-        }
-#endif
+        nnet::msg_init(gAppState.gSensorPacket, nnet::MSG_TYPE_SENSOR_DATA, nnet::get_mac_address(gAppState.gWifiManager));
+        msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_TEMPERATURE, gAppState.gCurrentBme.temperature);
+        msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_HUMIDITY, gAppState.gCurrentBme.humidity);
+        msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_PRESSURE, gAppState.gCurrentBme.pressure);
+        msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_CO2, gAppState.gCurrentScd.co2);
+        msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_LIGHT, gAppState.gCurrentBh.lux);
+        nnet::send(gAppState.gTcpClient, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
     }
 
-    void read_rd03d(state_t* state)
+    void process_rd03d(void*, u64)
     {
 #ifdef ENABLE_RD03D
-        if (nsensors::updateRD03D())
+        if (!nsensors::updateRD03D())
         {
-            for (s8 i = 0; i < 3; ++i)
-            {
-                nsensors::nrd03d::target_t tgt;
-                if (nsensors::getRD03DTarget(i, tgt))
-                {
-                    gAppState.gCurrentRd03d.DetectionBits[i] = (gAppState.gCurrentRd03d.DetectionBits[i] << 1) | 1;
-                    // nlog::printf("T%d: %d, %d\n", va_t(i), va_t(tgt[i].x), va_t(tgt[i].y));
-                }
-                else
-                {
-                    gAppState.gCurrentRd03d.DetectionBits[i] = (gAppState.gCurrentRd03d.DetectionBits[i] << 1) | 0;
-                }
-
-                u8 detected = gAppState.gCurrentRd03d.Detected[i] & 3;  // Current detection state
-
-                const bool dseen = (gAppState.gCurrentRd03d.DetectionBits[i] & 0x3F) == 0x3F;
-                if (dseen)
-                {
-                    // Too transition from no-presence to presence we must have seen 3 detections in a row (300 ms)
-                    detected = ((detected << 1) | 1);
-                }
-                else
-                {
-                    const bool dnone = (gAppState.gCurrentRd03d.DetectionBits[i] & 0x3FFFFFFF) == 0;
-                    if (dnone)
-                    {
-                        // To transition from presence to no-presence we must have seen 30 no-detections in a row (3 seconds)
-                        detected = ((detected << 1) | 0);
-                    }
-                }
-                gAppState.gCurrentRd03d.Detected[i] = detected;
-
-                nlog::printf("T%d detection: %s\n", va_t(i), va_t((detected != 0) ? "PRESENCE" : "ABSENCE"));
-            }
+            return;
         }
-#endif
-    }
-
-    void send_rd03d(state_t* state)
-    {
-#ifdef ENABLE_RD03D
-        // Write a custom (binary-format) network message
-        nnet::msg_init(gAppState.gSensorPacket, nnet::MSG_TYPE_SENSOR_DATA, state->MACAddress);
 
         for (s8 i = 0; i < 3; ++i)
         {
-            const u8 detected = gAppState.gCurrentRd03d.Detected[i];
-            if (gAppState.gCurrentRd03d.LastSendDetected[i] != detected)
+            nsensors::nrd03d::target_t target;
+            const bool                 target_detected = nsensors::getRD03DTarget(i, target);
+            gAppState.gCurrentRd03d.DetectionBits[i]   = (gAppState.gCurrentRd03d.DetectionBits[i] << 1) | (target_detected ? 1 : 0);
+
+            const bool detected_for_six_samples  = (gAppState.gCurrentRd03d.DetectionBits[i] & 0x3f) == 0x3f;
+            const bool absent_for_thirty_samples = (gAppState.gCurrentRd03d.DetectionBits[i] & 0x3fffffff) == 0;
+            if (detected_for_six_samples)
             {
-                gAppState.gCurrentRd03d.LastSendDetected[i] = detected;
-                msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_BINARY + i, detected);
+                gAppState.gCurrentRd03d.Detected[i] = 1;
+            }
+            else if (absent_for_thirty_samples)
+            {
+                gAppState.gCurrentRd03d.Detected[i] = 0;
             }
         }
 
-        if (gAppState.gSensorPacket.Size > 0)
+        u8 presence = 0;
+        for (s8 i = 0; i < 3; ++i)
         {
-            nnet::send(gAppState.gTcpClient, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size);
+            presence |= gAppState.gCurrentRd03d.Detected[i] << i;
+        }
+
+        if (presence != gAppState.gCurrentRd03d.LastSendPresence)
+        {
+            nnet::msg_init(gAppState.gSensorPacket, nnet::MSG_TYPE_SENSOR_DATA, nnet::get_mac_address(gAppState.gWifiManager));
+            msg_write_sensor(gAppState.gSensorPacket, SENSOR_ID_BINARY, presence);
+            if (nnet::send(gAppState.gTcpClient, gAppState.gSensorPacket.Data, gAppState.gSensorPacket.Size))
+            {
+                gAppState.gCurrentRd03d.LastSendPresence = presence;
+            }
         }
 #endif
     }
@@ -337,6 +242,8 @@ namespace ncore
 
         void setup(state_t* state)
         {
+            gAppState.reset();
+
             gAppState.gWifiManager = nnet::create_wifi_mgr(WIFI_SSID(), WIFI_PASSWORD());
             nnet::activate(gAppState.gWifiManager);
 
@@ -348,6 +255,13 @@ namespace ncore
             nsensors::initBH1750();
             nsensors::initSCD41();
             nsensors::initRD03D(RD03D_RX_PIN, RD03D_TX_PIN);
+
+            ntimer::init_periodic_task(&gAppState.gReadBme280Task, 1000, nullptr, read_bme280);
+            ntimer::init_periodic_task(&gAppState.gReadBh1750Task, 1000, nullptr, read_bh1750);
+            ntimer::init_periodic_task(&gAppState.gReadScd41Task, 1000, nullptr, read_scd41);
+            ntimer::init_periodic_task(&gAppState.gSendEnvironmentTask, 10000, nullptr, send_environment);
+            ntimer::init_periodic_task(&gAppState.gProcessRd03dTask, 100, nullptr, process_rd03d);
+            ntimer::mark_periodic_task(&gAppState.gSendEnvironmentTask, ntimer::millis());
         }
 
         static u64 toggle_lcd_fill_time = 0;
@@ -355,6 +269,13 @@ namespace ncore
         void tick(state_t* state)
         {
             nlog::println("Tick");
+
+            const u64 now_ms = ntimer::millis();
+            ntimer::tick_periodic_task(&gAppState.gReadBme280Task, now_ms);
+            ntimer::tick_periodic_task(&gAppState.gReadBh1750Task, now_ms);
+            ntimer::tick_periodic_task(&gAppState.gReadScd41Task, now_ms);
+            ntimer::tick_periodic_task(&gAppState.gSendEnvironmentTask, now_ms);
+            ntimer::tick_periodic_task(&gAppState.gProcessRd03dTask, now_ms);
 
             nnet::tick(gAppState.gWifiManager);
             nnet::tick_tcp_client(nnet::get_link_state(gAppState.gWifiManager), gAppState.gTcpClient);
